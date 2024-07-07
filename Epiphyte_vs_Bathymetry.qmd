@@ -1,0 +1,60 @@
+---
+title: "Epiphytes__vs_Bathymetry"
+author: "Simon"
+format: html
+editor: source
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(imager)
+library(magick)
+library(sf)
+```
+
+```{r detect fisherman footprints}
+
+image <- image_read("Data/RGB_Epiphytes.tif")
+
+temp_image_path <- tempfile(fileext = ".png")
+image_write(image, path = temp_image_path, format = "png")
+
+image <- load.image(temp_image_path)
+
+# Convert to grayscale
+gray_image <- grayscale(image)
+
+# Apply Gaussian blur to reduce noise
+blurred_image <- isoblur(gray_image, 2)
+
+```
+
+```{r Epi spectra}
+mask <- vect("Data/Epi_Laurent_02072024.shp")
+img_multi <- rast("Data/Epi_Laurent_02072024.tif") %>% 
+  mask(mask)
+img_DEM <- rast("Data/DEM_Epiphytes.tif") 
+pred <- rast("Data/Epi_Laurent_02072024_DISCOV_InvaSea_pred.tif") %>% 
+  mask(mask)
+
+img_DEM_rs <- terra::resample(img_DEM, img_multi)%>% 
+  mask(mask)
+pred_rs <- terra::resample(pred, img_multi)%>% 
+  mask(mask)
+
+ext(pred_rs) == ext(img_multi)
+ext(img_DEM_rs) == ext(img_multi)
+
+img <- rast(list(img_multi, img_DEM_rs, pred_rs))
+
+names(img) <- c(paste0("B",c(1:10)),"DEM","Pred")
+
+df <- img %>%
+  as.data.frame(xy=T) %>% 
+  dplyr::filter(B1 != 0,
+                Pred != 0)
+```
+
+
+
