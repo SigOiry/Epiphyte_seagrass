@@ -3,18 +3,20 @@ title: "Epiphytes__vs_Bathymetry"
 author: "Simon"
 format: html
 editor: source
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r}
 library(tidyverse)
 library(terra)
-library(imager)
+
 library(magick)
 library(sf)
 ```
 
 ```{r detect fisherman footprints}
-
+library(imager)
 image <- image_read("Data/RGB_Epiphytes.tif")
 
 temp_image_path <- tempfile(fileext = ".png")
@@ -31,29 +33,62 @@ blurred_image <- isoblur(gray_image, 2)
 ```
 
 ```{r Epi spectra}
-mask <- vect("Data/Epi_Laurent_02072024.shp")
-img_multi <- rast("Data/Epi_Laurent_02072024.tif") %>% 
-  mask(mask)
-img_DEM <- rast("Data/DEM_Epiphytes.tif") 
-pred <- rast("Data/Epi_Laurent_02072024_DISCOV_InvaSea_pred.tif") %>% 
-  mask(mask)
 
-img_DEM_rs <- terra::resample(img_DEM, img_multi)%>% 
-  mask(mask)
-pred_rs <- terra::resample(pred, img_multi)%>% 
-  mask(mask)
+if(!file.exist("Data/df_bathy.csv")){
+  mask <- vect("Data/Epi_Laurent_0{2072024.shp")
+  img_multi <- rast("Data/Epi_Laurent_02072024.tif") %>% 
+    mask(mask)
+  img_DEM <- rast("Data/DEM_Epiphytes.tif") 
+  pred <- rast("Data/Epi_Laurent_02072024_DISCOV_InvaSea_pred.tif") %>% 
+    mask(mask)
+  
+  img_DEM_rs <- terra::resample(img_DEM, img_multi)%>% 
+    mask(mask)
+  pred_rs <- terra::resample(pred, img_multi)%>% 
+    mask(mask)
+  
+  ext(pred_rs) == ext(img_multi)
+  ext(img_DEM_rs) == ext(img_multi)
+  
+  img <- rast(list(img_multi, img_DEM_rs, pred_rs))
+  
+  names(img) <- c(paste0("B",c(1:10)),"DEM","Pred")
+  
+  df <- img %>%
+    as.data.frame(xy=T) %>% 
+    dplyr::filter(B1 != 0,
+                  Pred != 0,
+                  !is.na(DEM))
+  
+  df_bathy <- df %>% 
+    mutate(Bathy = round(DEM),
+           pxl_ID = c(1:nrow(.))) %>% 
+    pivot_longer(-c(pxl_ID,DEM,Pred,x,y), names_to = "Band", values_to = "Ref") %>% 
+    mutate(Wavelength = case_when(Band == "B1" ~ 444,
+                                  Band == "B2" ~ 475,
+                                  Band == "B3" ~ 531,
+                                  Band == "B4" ~ 560,
+                                  Band == "B5" ~ 650,
+                                  Band == "B6" ~ 668,
+                                  Band == "B7" ~ 705,
+                                  Band == "B8" ~ 717,
+                                  Band == "B9" ~ 740,
+                                  Band == "B10" ~ 840))
+  
+  
+  write.csv(df_bathy,"Data/df_bathy.csv", rowname)
+  
+  rm(img_multi)
+  rm(pred)
+  rm(img_DEM_rs)
+  rm(pred_rs)
+  rm(img)
 
-ext(pred_rs) == ext(img_multi)
-ext(img_DEM_rs) == ext(img_multi)
+}else{
+  df_bathy <- read.csv2("Data/df_bathy.csv")
+}
 
-img <- rast(list(img_multi, img_DEM_rs, pred_rs))
 
-names(img) <- c(paste0("B",c(1:10)),"DEM","Pred")
-
-df <- img %>%
-  as.data.frame(xy=T) %>% 
-  dplyr::filter(B1 != 0,
-                Pred != 0)
 ```
 
 
