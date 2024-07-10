@@ -10,7 +10,7 @@ editor_options:
 ```{r}
 library(tidyverse)
 library(terra)
-
+library(Utilities.Package)
 library(magick)
 library(sf)
 ```
@@ -32,10 +32,10 @@ blurred_image <- isoblur(gray_image, 2)
 
 ```
 
-```{r Epi spectra}
+```{r Epi Bathy}
 
-if(!file.exist("Data/df_bathy.csv")){
-  mask <- vect("Data/Epi_Laurent_0{2072024.shp")
+if(!file.exists("Data/df_bathy.csv")){
+  mask <- vect("Data/Epi_Laurent_02072024.shp")
   img_multi <- rast("Data/Epi_Laurent_02072024.tif") %>% 
     mask(mask)
   img_DEM <- rast("Data/DEM_Epiphytes.tif") 
@@ -63,7 +63,7 @@ if(!file.exist("Data/df_bathy.csv")){
   df_bathy <- df %>% 
     mutate(Bathy = round(DEM),
            pxl_ID = c(1:nrow(.))) %>% 
-    pivot_longer(-c(pxl_ID,DEM,Pred,x,y), names_to = "Band", values_to = "Ref") %>% 
+    pivot_longer(-c(pxl_ID,DEM,Pred,x,y,Bathy), names_to = "Band", values_to = "Ref") %>% 
     mutate(Wavelength = case_when(Band == "B1" ~ 444,
                                   Band == "B2" ~ 475,
                                   Band == "B3" ~ 531,
@@ -73,22 +73,82 @@ if(!file.exist("Data/df_bathy.csv")){
                                   Band == "B7" ~ 705,
                                   Band == "B8" ~ 717,
                                   Band == "B9" ~ 740,
-                                  Band == "B10" ~ 840))
+                                  Band == "B10" ~ 840))%>%
+  dplyr::filter(Pred == 3) %>% 
+  group_by(Bathy, Wavelength) %>%
+  reframe(x = mean(x),
+          y = mean(y),
+          Ref = mean(Ref),
+          Ref_abs = abs(Ref))
   
   
-  write.csv(df_bathy,"Data/df_bathy.csv", rowname)
+  write.csv(df_bathy,"Data/df_bathy.csv", row.names = F)
   
   rm(img_multi)
   rm(pred)
   rm(img_DEM_rs)
   rm(pred_rs)
   rm(img)
+  rm(df)
 
 }else{
-  df_bathy <- read.csv2("Data/df_bathy.csv")
+  df_bathy <- read.csv("Data/df_bathy.csv")
 }
 
+df <- df_bathy 
 
+ggplot(df, aes(x = Wavelength))+
+  geom_line(aes(y = Ref))+
+  geom_ribbon(aes(ymin = Ref - Ref_abs, ymax = Ref+Ref_abs), alpha = 0.3)+
+  facet_wrap(~ Bathy)+
+  theme_Bede()
+
+```
+
+
+```{r Slope Bathy}
+
+mask <- vect("Data/Epi_Laurent_02072024.shp")
+img_multi <- rast("Data/Epi_Laurent_02072024.tif") %>% 
+  mask(mask)
+img_DEM <- rast("Data/DEM_Epiphytes.tif") 
+pred <- rast("Data/Epi_Laurent_02072024_DISCOV_InvaSea_pred.tif") %>% 
+  mask(mask)
+
+img_DEM_rs <- terra::resample(img_DEM, img_multi)%>% 
+  mask(mask)
+pred_rs <- terra::resample(pred, img_multi)%>% 
+  mask(mask)
+
+ext(pred_rs) == ext(img_multi)
+ext(img_DEM_rs) == ext(img_multi)
+
+img <- rast(list(img_multi, img_DEM_rs, pred_rs))
+
+names(img) <- c(paste0("B",c(1:10)),"DEM","Pred")
+
+df <- img %>%
+  as.data.frame(xy=T) %>% 
+  dplyr::select(DEM,B7,B9,Pred) %>% 
+  dplyr::filter(B9 != 0,
+                Pred ==3,
+                !is.na(DEM)) %>% 
+  mutate(NDIRI = (`B9`-`B7`)/(`B7`+`B9`))
+
+
+plot <- df %>% 
+  ggplot(aes(x = DEM, y = NDIRI))+
+  geom_smooth(method = "gam", color = "black")+
+  geom_point(alpha = 0.05)+
+  ylab("IR Slope")+
+  xlab("Heigh above the Geoid (m)")+
+  theme_Bede()+
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12))
+    
+ggsave("Height_vs_Slope.png", width = 1200*4, height = 900*4, unit = "px" )
 ```
 
 
